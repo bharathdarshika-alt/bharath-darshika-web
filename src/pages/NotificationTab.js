@@ -52,7 +52,7 @@ export default function NotificationTab() {
           'Accept': 'application/json',
           'Accept-encoding': 'gzip, deflate',
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer kaBuMT2kI-5U9a11Ihey8XUfCm7Y3fjibs1yz2Xb' 
+          'Authorization': `Bearer ${process.env.REACT_APP_EXPO_ACCESS_TOKEN}`
         },
         body: JSON.stringify(messages),
       });
