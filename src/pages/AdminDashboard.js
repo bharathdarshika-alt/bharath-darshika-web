@@ -1,229 +1,174 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../firebaseConfig';
-import { 
-  collection, addDoc, getDocs, updateDoc, deleteDoc, doc, writeBatch 
-} from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
+import { db } from '../firebaseConfig';
+import { collection, getDocs } from 'firebase/firestore';
 import { 
-  Plus, Edit3, Trash2, MapPin, Layers, LogOut, 
-  ChevronDown, ChevronRight, Search, Sparkles, CheckSquare, Square, Youtube, Navigation 
+  Layers, LogOut, Navigation, Map, Bell, 
+  LayoutDashboard, UserCircle, Menu, X, ChevronRight, FileJson
 } from 'lucide-react';
+
+import PlacesTab from './PlacesTab';
+import StatesTab from './StatesTab';
+import NotificationTab from './NotificationTab';
+import BulkUpload from './BulkUpload'; // 👈 కొత్తగా యాడ్ చేశాం
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const [places, setPlaces] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isEditing, setIsEditing] = useState(false);
-  const [currentId, setCurrentId] = useState(null);
-  const [expandedZones, setExpandedZones] = useState({ "South India": true });
-  const [selectedItems, setSelectedItems] = useState([]);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [counts, setCounts] = useState({ places: 0, states: 0 });
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
 
-  const [formData, setFormData] = useState({
-    name: '', state: '', zone: 'South India', category: 'Hidden Gems', 
-    history: '', mystery: '', img: '', location: '', nearby_attractions: '', 
-    rentora_suitable: 'No', is_hidden_gem: false, yt_link: ''
-  });
-
-  const zones = ['South India', 'North India', 'West India', 'East India', '💎 Hidden Gems'];
+  // డేటా కౌంట్స్ తీసుకురావడానికి మరియు రిఫ్రెష్ చేయడానికి
+  const fetchCounts = async () => {
+    try {
+      const pSnap = await getDocs(collection(db, "Places"));
+      const sSnap = await getDocs(collection(db, "States"));
+      setCounts({ places: pSnap.size, states: sSnap.size });
+    } catch (e) { console.error("Count Fetch Error:", e); }
+  };
 
   useEffect(() => {
     if (localStorage.getItem('isAdmin') !== 'true') navigate('/login');
-    fetchData();
+    fetchCounts();
   }, [navigate]);
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const pSnap = await getDocs(collection(db, "Places"));
-      const gSnap = await getDocs(collection(db, "HiddenGems"));
-      const combined = [
-        ...pSnap.docs.map(d => ({ id: d.id, ...d.data(), is_hidden_gem: false })),
-        ...gSnap.docs.map(d => ({ id: d.id, ...d.data(), is_hidden_gem: true }))
-      ];
-      setPlaces(combined);
-    } catch (e) { console.error("Fetch Error:", e); }
-    setLoading(false);
-  };
-
-  const handleSave = async () => {
-    if (!formData.name || !formData.state) return alert("పేరు మరియు రాష్ట్రం తప్పనిసరి బొస్సు!");
-    
-    // 🔥 రాజస్థాన్ ఇష్యూ ఫిక్స్: సేవ్ చేసేటప్పుడే మనం సెలెక్ట్ చేసిన జోన్ ని పక్కాగా పంపిస్తున్నాం
-    const targetCol = formData.is_hidden_gem ? "HiddenGems" : "Places";
-    const dataToSave = {
-      ...formData,
-      zone: formData.is_hidden_gem ? "North India" : formData.zone // Hidden Gems కి డీఫాల్ట్ జోన్
-    };
-
-    try {
-      if (isEditing) {
-        await updateDoc(doc(db, targetCol, currentId), dataToSave);
-        alert("అప్‌డేట్ అయ్యింది! ✅");
-      } else {
-        await addDoc(collection(db, targetCol), dataToSave);
-        alert("యాడ్ అయ్యింది! 🚀");
-      }
-      resetForm();
-      fetchData();
-    } catch (e) { alert(e.message); }
-  };
-
-  const resetForm = () => {
-    setFormData({ name: '', state: '', zone: 'South India', category: 'Hidden Gems', history: '', mystery: '', img: '', location: '', nearby_attractions: '', rentora_suitable: 'No', is_hidden_gem: false, yt_link: '' });
-    setIsEditing(false);
-    setCurrentId(null);
-  };
-
-  const toggleZone = (z) => setExpandedZones(prev => ({ ...prev, [z]: !prev[z] }));
-
-  const handleDelete = async (id, isGem) => {
-    if (window.confirm("డిలీట్ చేయమంటావా బాస్?")) {
-      await deleteDoc(doc(db, isGem ? "HiddenGems" : "Places", id));
-      fetchData();
-    }
-  };
-
-  const handleBulkDelete = async () => {
-    if (!window.confirm(`${selectedItems.length} ఐటమ్స్ డిలీట్ చేయమంటావా?`)) return;
-    const batch = writeBatch(db);
-    selectedItems.forEach(id => {
-      const item = places.find(p => p.id === id);
-      batch.delete(doc(db, item.is_hidden_gem ? "HiddenGems" : "Places", id));
-    });
-    await batch.commit();
-    setSelectedItems([]);
-    fetchData();
-  };
-
-  // --- 🔥 అసలైన రాజస్థాన్ జోన్ ఫిక్స్ ఇక్కడ ఉంది ---
-  const getFilteredItems = (zoneName) => {
-    return places.filter(p => {
-      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                            p.state.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      if (zoneName === '💎 Hidden Gems') return p.is_hidden_gem && matchesSearch;
-      
-      // పక్కాగా జోన్ మ్యాచ్ అవ్వాలి + అది హిడెన్ జెమ్ కాకూడదు
-      const pZone = p.zone || 'South India'; 
-      return pZone === zoneName && !p.is_hidden_gem && matchesSearch;
-    });
-  };
-
-  if (loading) return <div style={styles.loader}>మాస్టర్ డేటా లోడ్ అవుతోంది... ⏳</div>;
+  const toggleSidebar = () => setSidebarOpen(!isSidebarOpen);
 
   return (
     <div style={styles.container}>
-      {/* TOP BAR */}
-      <div style={styles.nav}>
-        <div style={styles.brand}><Layers color="#FF7A00" size={28} /> <h2>Darshika <span style={{color: '#94A3B8'}}>CMS</span></h2></div>
-        <div style={styles.searchWrap}>
-          <Search size={18} color="#94A3B8" />
-          <input placeholder="వెతకండి బాస్ (Place or State)..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={styles.search} />
+      {/* --- MOBILE HEADER --- */}
+      <div style={styles.mobileHeader}>
+        <div style={styles.brand}>
+          <Layers color="#FF7A00" size={24} />
+          <span style={{...styles.brandText, color: '#0F172A'}}>Darshika CMS</span>
         </div>
-        <button onClick={() => { localStorage.clear(); navigate('/login'); }} style={styles.logout}><LogOut size={18} /></button>
+        <button onClick={toggleSidebar} style={styles.menuBtn}>
+          {isSidebarOpen ? <X size={28} /> : <Menu size={28} />}
+        </button>
       </div>
 
-      <div style={styles.wrapper}>
-        {/* SIDE FORM */}
-        <div style={styles.formSide}>
-          <div style={styles.card}>
-            <h3 style={{margin: 0, color: '#0F4C81'}}>{isEditing ? "✏️ Edit Gem" : "➕ Add New Gem"}</h3>
-            <div style={styles.formGrid}>
-              <input placeholder="Place Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={styles.input} />
-              <input placeholder="State (e.g. Rajasthan)" value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})} style={styles.input} />
-              <select value={formData.zone} onChange={e => setFormData({...formData, zone: e.target.value})} style={styles.input}>
-                {zones.filter(z => z !== '💎 Hidden Gems').map(z => <option key={z} value={z}>{z}</option>)}
-              </select>
-              <select value={formData.is_hidden_gem} onChange={e => setFormData({...formData, is_hidden_gem: e.target.value === 'true'})} style={styles.input}>
-                <option value="false">Regular Place</option>
-                <option value="true">Hidden Gem 💎</option>
-              </select>
-              <input placeholder="Image URL" value={formData.img} onChange={e => setFormData({...formData, img: e.target.value})} style={styles.input} />
-              <input placeholder="YouTube Link" value={formData.yt_link} onChange={e => setFormData({...formData, yt_link: e.target.value})} style={styles.input} />
-            </div>
-            <textarea placeholder="Mystery / History (Telugu)" value={formData.history} style={styles.textarea} onChange={e => setFormData({...formData, history: e.target.value})} />
-            <input placeholder="Nearby Attractions" value={formData.nearby_attractions} style={styles.input} onChange={e => setFormData({...formData, nearby_attractions: e.target.value})} />
-            
-            <div style={styles.btnRow}>
-              <button onClick={handleSave} style={styles.saveBtn}>{isEditing ? "Update Database" : "Publish to App"}</button>
-              {isEditing && <button onClick={resetForm} style={styles.cancelBtn}>Cancel</button>}
+      {/* --- SIDEBAR --- */}
+      <aside style={{
+        ...styles.sidebar,
+        transform: isSidebarOpen ? 'translateX(0)' : (window.innerWidth <= 1024 ? 'translateX(-100%)' : 'translateX(0)'),
+      }}>
+        <div style={styles.sidebarHeader}>
+          <Layers color="#FF7A00" size={32} />
+          <h2 style={styles.brandText}>Darshika <span style={{color: '#94A3B8'}}>CMS</span></h2>
+        </div>
+
+        <nav style={styles.navGroup}>
+          <div style={styles.sectionLabel}>MAIN MENU</div>
+          <NavButton active={activeTab === 'dashboard'} onClick={() => {setActiveTab('dashboard'); setSidebarOpen(false);}} icon={<LayoutDashboard size={20}/>} label="Overview" />
+          <NavButton active={activeTab === 'places'} onClick={() => {setActiveTab('places'); setSidebarOpen(false);}} icon={<Navigation size={20}/>} label="Places Management" />
+          <NavButton active={activeTab === 'states'} onClick={() => {setActiveTab('states'); setSidebarOpen(false);}} icon={<Map size={20}/>} label="Regional States" />
+          
+          <div style={{...styles.sectionLabel, marginTop: '20px'}}>DATA TOOLS</div>
+          <NavButton active={activeTab === 'bulk'} onClick={() => {setActiveTab('bulk'); setSidebarOpen(false);}} icon={<FileJson size={20}/>} label="Bulk Integration" />
+          <NavButton active={activeTab === 'notifications'} onClick={() => {setActiveTab('notifications'); setSidebarOpen(false);}} icon={<Bell size={20}/>} label="Push Broadcast" />
+          
+          <div style={{...styles.sectionLabel, marginTop: '30px'}}>SYSTEM</div>
+          <button onClick={() => { localStorage.clear(); navigate('/login'); }} style={styles.logoutNavItem}>
+            <LogOut size={20} /> <span>Sign Out</span>
+          </button>
+        </nav>
+
+        <div style={styles.sidebarUser}>
+          <div style={styles.userBadge}>
+            <div style={styles.statusDot} />
+            <UserCircle size={35} color="#94A3B8" />
+            <div style={{marginLeft: '10px'}}>
+               <div style={{color: '#fff', fontSize: '14px', fontWeight: '600'}}>Master Admin</div>
+               <div style={{color: '#64748B', fontSize: '11px'}}>Super Control</div>
             </div>
           </div>
         </div>
+      </aside>
 
-        {/* DATA LIST (ACCORDION) */}
-        <div style={styles.listSide}>
-          <div style={styles.listHead}>
-            <h4 style={{margin: 0}}>Organized Database</h4>
-            {selectedItems.length > 0 && <button onClick={handleBulkDelete} style={styles.bulkBtn}>Delete Selected ({selectedItems.length})</button>}
+      {/* --- MAIN CONTENT --- */}
+      <main style={{
+        ...styles.mainContent,
+        marginLeft: window.innerWidth <= 1024 ? '0' : '280px'
+      }}>
+        <header style={styles.contentHeader}>
+          <div style={styles.headerTitle}>
+            <h1 style={styles.pageTitle}>{activeTab.toUpperCase()}</h1>
+            <div style={styles.breadcrumb}>Dashboard <ChevronRight size={14}/> {activeTab}</div>
           </div>
+        </header>
 
-          {zones.map(zone => {
-            const items = getFilteredItems(zone);
-            return (
-              <div key={zone} style={styles.accordion}>
-                <div onClick={() => toggleZone(zone)} style={styles.accHead}>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-                    {expandedZones[zone] ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                    <span style={{fontWeight: '800', fontSize: '16px'}}>{zone}</span>
-                    <span style={styles.badge}>{items.length}</span>
-                  </div>
-                </div>
+        <section style={styles.tabContent}>
+          {activeTab === 'dashboard' && <HomeDashboard setActiveTab={setActiveTab} counts={counts} />}
+          {activeTab === 'places' && <PlacesTab />}
+          {activeTab === 'states' && <StatesTab />}
+          {activeTab === 'notifications' && <NotificationTab />}
+          {activeTab === 'bulk' && <BulkUpload refresh={fetchCounts} />}
+        </section>
+      </main>
 
-                {expandedZones[zone] && (
-                  <div style={styles.accBody}>
-                    {items.map(item => (
-                      <div key={item.id} style={styles.itemRow}>
-                        <div onClick={() => setSelectedItems(prev => prev.includes(item.id) ? prev.filter(i => i !== item.id) : [...prev, item.id])} style={{cursor: 'pointer'}}>
-                          {selectedItems.includes(item.id) ? <CheckSquare size={20} color="#FF7A00" /> : <Square size={20} color="#CBD5E1" />}
-                        </div>
-                        <img src={item.img} style={styles.thumb} alt="" />
-                        <div style={{flex: 1}}>
-                          <div style={{fontWeight: '700', fontSize: '14px'}}>{item.name}</div>
-                          <div style={{fontSize: '11px', color: '#64748B'}}>{item.state} | {item.location}</div>
-                        </div>
-                        <div style={{display: 'flex', gap: '10px'}}>
-                          <button onClick={() => { setFormData(item); setCurrentId(item.id); setIsEditing(true); window.scrollTo(0,0); }} style={styles.iconBtn}><Edit3 size={18}/></button>
-                          <button onClick={() => handleDelete(item.id, item.is_hidden_gem)} style={styles.iconBtnRed}><Trash2 size={18}/></button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {isSidebarOpen && <div onClick={toggleSidebar} style={styles.overlay} />}
     </div>
   );
 }
 
+// --- SUB-COMPONENTS ---
+const HomeDashboard = ({ setActiveTab, counts }) => (
+  <div style={styles.dashboardView}>
+    <div style={styles.heroBanner}>
+      <div style={{zIndex: 2}}>
+        <h2 style={{fontSize: '24px', margin: '0 0 10px 0'}}>System Operational.</h2>
+        <p style={{opacity: 0.8, fontSize: '14px', maxWidth: '500px'}}>Welcome back. You are currently viewing the real-time analytics and management suite for Bharat Darshika.</p>
+      </div>
+      <div style={styles.livePulse}><div style={styles.pulseRing}/>LIVE DATA</div>
+    </div>
+
+    <div style={styles.statsGrid}>
+      <StatBox label="TOTAL PLACES" count={counts.places} trend="Global Inventory" color="#FF7A00" onClick={() => setActiveTab('places')} />
+      <StatBox label="ACTIVE STATES" count={counts.states} trend="Regional Coverage" color="#3B82F6" onClick={() => setActiveTab('states')} />
+      <StatBox label="BULK TOOL" count="READY" trend="JSON Sync Active" color="#10B981" onClick={() => setActiveTab('bulk')} />
+    </div>
+  </div>
+);
+
+const StatBox = ({ label, count, trend, color, onClick }) => (
+  <div style={styles.statBox} onClick={onClick}>
+    <div style={{color: '#64748B', fontSize: '12px', fontWeight: '800', letterSpacing: '1px'}}>{label}</div>
+    <div style={{fontSize: '36px', fontWeight: '800', margin: '10px 0', color: '#1E293B'}}>{count}</div>
+    <div style={{fontSize: '12px', color: color, fontWeight: '700'}}>{trend}</div>
+    <ChevronRight style={styles.boxIcon} size={20} />
+  </div>
+);
+
+const NavButton = ({ active, onClick, icon, label }) => (
+  <button onClick={onClick} style={active ? styles.activeNav : styles.inactiveNav}>
+    {icon} <span>{label}</span>
+  </button>
+);
+
 const styles = {
-  container: { backgroundColor: '#F1F5F9', minHeight: '100vh', fontFamily: 'Inter, sans-serif' },
-  nav: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 5%', backgroundColor: '#fff', borderBottom: '1px solid #E2E8F0', position: 'sticky', top: 0, zIndex: 100 },
-  brand: { display: 'flex', alignItems: 'center', gap: '10px' },
-  searchWrap: { display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: '#F8FAFC', padding: '10px 20px', borderRadius: '15px', border: '1px solid #E2E8F0', flex: 0.5 },
-  search: { border: 'none', background: 'none', outline: 'none', width: '100%', fontSize: '14px' },
-  logout: { backgroundColor: '#FEE2E2', border: 'none', padding: '10px', borderRadius: '10px', color: '#EF4444', cursor: 'pointer' },
-  wrapper: { display: 'grid', gridTemplateColumns: '400px 1fr', gap: '30px', padding: '30px 5%' },
-  card: { backgroundColor: '#fff', padding: '30px', borderRadius: '25px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', position: 'sticky', top: '100px' },
-  formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' },
-  input: { padding: '12px', borderRadius: '12px', border: '1px solid #E2E8F0', fontSize: '13px', backgroundColor: '#F8FAFC', outline: 'none' },
-  textarea: { width: '100%', height: '100px', padding: '12px', borderRadius: '12px', border: '1px solid #E2E8F0', marginBottom: '10px', boxSizing: 'border-box', fontFamily: 'inherit', backgroundColor: '#F8FAFC', outline: 'none' },
-  saveBtn: { flex: 1, backgroundColor: '#0F4C81', color: '#fff', border: 'none', padding: '15px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' },
-  cancelBtn: { backgroundColor: '#94A3B8', color: '#fff', border: 'none', padding: '15px', borderRadius: '12px', cursor: 'pointer', marginLeft: '10px' },
-  btnRow: { display: 'flex' },
-  listHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
-  bulkBtn: { backgroundColor: '#EF4444', color: '#fff', border: 'none', padding: '8px 15px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' },
-  accordion: { backgroundColor: '#fff', borderRadius: '20px', marginBottom: '15px', border: '1px solid #E2E8F0', overflow: 'hidden' },
-  accHead: { padding: '20px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff' },
-  badge: { backgroundColor: '#F1F5F9', padding: '2px 10px', borderRadius: '10px', fontSize: '12px', color: '#64748B' },
-  accBody: { padding: '0 20px 20px 20px' },
-  itemRow: { display: 'flex', alignItems: 'center', gap: '15px', padding: '12px 0', borderBottom: '1px solid #F8FAFC' },
-  thumb: { width: '45px', height: '45px', borderRadius: '10px', objectFit: 'cover' },
-  iconBtn: { background: 'none', border: 'none', color: '#0F4C81', cursor: 'pointer' },
-  iconBtnRed: { background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer' },
-  loader: { textAlign: 'center', padding: '100px', fontSize: '20px', fontWeight: 'bold' }
+  container: { display: 'flex', minHeight: '100vh', backgroundColor: '#F8FAFC', fontFamily: "'Inter', sans-serif" },
+  sidebar: { width: '280px', backgroundColor: '#0F172A', padding: '30px 20px', display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 1200, transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)', boxShadow: '10px 0 30px rgba(0,0,0,0.1)' },
+  sidebarHeader: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '40px', paddingLeft: '10px' },
+  brandText: { color: '#fff', fontSize: '20px', fontWeight: '800', margin: 0 },
+  sectionLabel: { color: '#475569', fontSize: '11px', fontWeight: '800', letterSpacing: '1.5px', marginBottom: '15px', paddingLeft: '15px' },
+  navGroup: { display: 'flex', flexDirection: 'column', gap: '5px', flex: 1 },
+  activeNav: { display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 18px', borderRadius: '12px', backgroundColor: '#FF7A00', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: '700', transition: '0.3s' },
+  inactiveNav: { display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 18px', borderRadius: '12px', backgroundColor: 'transparent', color: '#94A3B8', border: 'none', cursor: 'pointer', fontWeight: '500', transition: '0.3s' },
+  logoutNavItem: { display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 18px', borderRadius: '12px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', border: 'none', cursor: 'pointer', fontWeight: '700', marginTop: '5px', textAlign: 'left' },
+  sidebarUser: { marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid #1E293B' },
+  userBadge: { display: 'flex', alignItems: 'center', backgroundColor: '#1E293B', padding: '12px', borderRadius: '16px', position: 'relative' },
+  statusDot: { position: 'absolute', top: '12px', left: '42px', width: '10px', height: '10px', backgroundColor: '#10B981', borderRadius: '50%', border: '2px solid #1E293B' },
+  mainContent: { flex: 1, padding: '40px', transition: 'margin 0.4s' },
+  mobileHeader: { display: window.innerWidth <= 1024 ? 'flex' : 'none', justifyContent: 'space-between', alignItems: 'center', padding: '15px 25px', backgroundColor: '#fff', borderBottom: '1px solid #E2E8F0', position: 'fixed', top: 0, width: '100%', zIndex: 1100, boxSizing: 'border-box' },
+  menuBtn: { border: 'none', background: 'none', cursor: 'pointer', color: '#0F172A' },
+  contentHeader: { marginBottom: '40px', paddingTop: window.innerWidth <= 1024 ? '60px' : '0' },
+  pageTitle: { fontSize: '28px', fontWeight: '900', color: '#0F172A', margin: 0, letterSpacing: '-1px' },
+  breadcrumb: { fontSize: '13px', color: '#94A3B8', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '5px', marginTop: '5px' },
+  heroBanner: { background: 'linear-gradient(135deg, #FF7A00 0%, #FF9533 100%)', color: '#fff', padding: '40px', borderRadius: '24px', position: 'relative', overflow: 'hidden', boxShadow: '0 20px 40px rgba(255, 122, 0, 0.2)', marginBottom: '30px' },
+  livePulse: { position: 'absolute', top: '20px', right: '20px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: '900' },
+  pulseRing: { width: '8px', height: '8px', backgroundColor: '#fff', borderRadius: '50%', boxShadow: '0 0 0 4px rgba(255,255,255,0.3)' },
+  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px' },
+  statBox: { backgroundColor: '#fff', padding: '30px', borderRadius: '24px', boxShadow: '0 10px 25px rgba(0,0,0,0.02)', cursor: 'pointer', transition: '0.3s', position: 'relative' },
+  boxIcon: { position: 'absolute', right: '25px', bottom: '25px', color: '#E2E8F0' },
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(4px)', zIndex: 1150 }
 };
