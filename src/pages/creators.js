@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore';
 import { 
   Trash2, Edit3, Youtube, Instagram, 
-  ExternalLink, UserPlus, XCircle, CheckCircle
+  ExternalLink, UserPlus, XCircle, CheckCircle, PlusCircle 
 } from 'lucide-react';
 
 export default function CreatorsTab() {
